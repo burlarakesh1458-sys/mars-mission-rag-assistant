@@ -1,0 +1,27 @@
+{
+  "threshold": -6.104,
+  "balanced_accuracy_on_calibration": 1.0,
+  "answerable_scores": [
+    6.907,
+    7.977,
+    1.644,
+    6.207,
+    7.526,
+    4.582,
+    1.519,
+    4.261
+  ],
+  "unanswerable_scores": [
+    -10.073,
+    -10.826,
+    -10.205,
+    -8.645,
+    -8.976,
+    -9.279,
+    -10.728,
+    -10.665
+  ],
+  "n_answerable": 8,
+  "n_unanswerable": 8,
+  "rerank_model": "cross-encoder/ms-marco-MiniLM-L-6-v2"
+}

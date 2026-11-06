@@ -21,6 +21,7 @@ CONFIGS = {
     "hybrid_rrf": dict(mode="hybrid", rerank=False),
     "hybrid_rrf+rerank": dict(mode="hybrid", rerank=True),
     "dense+rerank": dict(mode="dense", rerank=True),
+    "hybrid_rrf+rerank_fused": dict(mode="hybrid", rerank=True, rerank_mode="fuse"),
 }
 
 
@@ -51,6 +52,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=str(ROOT / "reports" / "retrieval_eval.json"))
     ap.add_argument("--bm25-only", action="store_true")
     ap.add_argument("--min-doc-hit5", type=float, default=None, help="fail (exit 1) below this BM25 doc_hit@5")
+    ap.add_argument("--configs", default="", help="comma-separated subset of configs to run")
+    ap.add_argument("--merge", action="store_true", help="merge into an existing results file")
     args = ap.parse_args(argv)
 
     s = get_settings()
@@ -68,7 +71,12 @@ def main(argv=None) -> int:
                                     Reranker(s.rerank_model), s.k_dense, s.k_bm25, s.rrf_k, s.k_rerank_pool)
         retriever.retrieve("warm up", k=3, mode="hybrid", rerank=True)
         configs = CONFIGS
+    if args.configs:
+        configs = {k: v for k, v in configs.items() if k in args.configs.split(",")}
     res = evaluate(retriever, golden, configs)
+    if args.merge and Path(args.out).exists() and not args.bm25_only:
+        old = json.loads(Path(args.out).read_text())["configs"]
+        res = {**old, **res}
     payload = {"n_questions": sum(1 for g in golden if g["answerable"]), "n_chunks": len(chunks),
                "settings": {"k_dense": s.k_dense, "k_bm25": s.k_bm25, "rrf_k": s.rrf_k,
                             "k_rerank_pool": s.k_rerank_pool, "embed_model": s.embed_model,

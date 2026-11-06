@@ -29,7 +29,10 @@ def answers_path(config: str) -> Path:
 def run(config: str, golden: list[dict], limit: int | None = None) -> None:
     from ..pipeline import RAGPipeline
 
-    pipe = RAGPipeline(use_reranker=(config == "rerank"))
+    # rerank: contexts ordered by cross-encoder; rerank_fused: RRF(BM25, dense, cross-encoder);
+    # no_rerank: plain hybrid RRF and no retrieval-side refusal gate (LLM-only refusal)
+    pipe = RAGPipeline(use_reranker=config != "no_rerank",
+                       rerank_mode="fuse" if config == "rerank_fused" else "replace")
     out = answers_path(config)
     out.parent.mkdir(parents=True, exist_ok=True)
     done = {r["id"] for r in load_jsonl(out)} if out.exists() else set()
@@ -101,13 +104,13 @@ def summarize(configs: list[str]) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--golden", default=str(ROOT / "eval" / "golden.jsonl"))
-    ap.add_argument("--config", choices=["rerank", "no_rerank"], default="rerank")
+    ap.add_argument("--config", choices=["rerank", "rerank_fused", "no_rerank"], default="rerank_fused")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--summarize", action="store_true")
     args = ap.parse_args(argv)
     if not args.summarize:
         run(args.config, load_jsonl(args.golden), args.limit)
-    summarize(["rerank", "no_rerank"])
+    summarize(["rerank_fused", "rerank", "no_rerank"])
     return 0
 
 

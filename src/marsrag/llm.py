@@ -157,6 +157,7 @@ def default_client(settings) -> ChatClient:
     providers = [Provider("groq", settings.llm_base_url, settings.llm_key_env),
                  # same weights on a second provider, then the larger sibling on Groq (separate daily quota)
                  Provider("nvidia", settings.llm_fallback_base_url, settings.llm_fallback_key_env),
-                 Provider("groq-120b", settings.llm_base_url, settings.llm_key_env, model="openai/gpt-oss-120b")]
+                 Provider("groq-120b", settings.llm_base_url, settings.llm_key_env, model="openai/gpt-oss-120b"),
+                 Provider("groq-qwen", settings.llm_base_url, settings.llm_key_env, model="qwen/qwen3.8-27b")]
     return ChatClient(settings.llm_model, providers, cache_path=settings.cache_dir / "llm_cache.sqlite",
                       max_tokens=settings.llm_max_tokens)

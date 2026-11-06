@@ -54,6 +54,8 @@ class Settings:
     k_rerank_pool: int = field(default_factory=lambda: _env("K_RERANK_POOL", 20))
     k_context: int = field(default_factory=lambda: _env("K_CONTEXT", 5))
     use_reranker: bool = field(default_factory=lambda: _env("USE_RERANKER", True))
+    # "replace": order contexts by cross-encoder score; "fuse": RRF of BM25, dense and cross-encoder ranks
+    rerank_mode: str = field(default_factory=lambda: _env("RERANK_MODE", "fuse"))
 
     # refusal gate: if the best cross-encoder logit is below this, decline without calling the LLM.
     # Calibrated on data/calibration.jsonl (disjoint from the golden set) by scripts/calibrate.py.

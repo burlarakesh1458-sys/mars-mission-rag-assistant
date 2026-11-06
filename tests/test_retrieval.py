@@ -62,3 +62,20 @@ def test_unknown_mode_raises(chunks):
     r = HybridRetriever(chunks, dense=None, reranker=None)
     with pytest.raises(ValueError):
         r.retrieve("x", mode="magic")
+
+
+def test_rerank_fuse_mode_only_nudges_order(chunks):
+    # a reranker that loves the isolation chunk cannot override strong BM25 + dense agreement
+    rr = FakeReranker(lambda q, t: 10.0 if "isolation" in t else 0.0)
+    r = HybridRetriever(chunks, dense=FakeDense(chunks), reranker=rr)
+    replace = r.retrieve("Sabatier reaction hydrogen carbon dioxide", k=3, rerank=True, rerank_mode="replace")
+    fused = r.retrieve("Sabatier reaction hydrogen carbon dioxide", k=3, rerank=True, rerank_mode="fuse")
+    assert replace[0].chunk.doc_id == "400"
+    assert fused[0].chunk.doc_id == "200"
+    assert all(h.rerank_score is not None for h in fused)
+
+
+def test_unknown_rerank_mode_raises(chunks):
+    r = HybridRetriever(chunks, dense=FakeDense(chunks), reranker=FakeReranker())
+    with pytest.raises(ValueError):
+        r.retrieve("x y", rerank=True, rerank_mode="bogus")

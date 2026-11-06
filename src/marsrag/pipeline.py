@@ -93,10 +93,12 @@ def is_refusal(text: str) -> bool:
 
 class RAGPipeline:
     def __init__(self, settings: Settings | None = None, retriever: HybridRetriever | None = None,
-                 llm=None, use_reranker: bool | None = None, refusal_threshold: float | None = None):
+                 llm=None, use_reranker: bool | None = None, refusal_threshold: float | None = None,
+                 rerank_mode: str | None = None):
         self.s = settings or get_settings()
         self.use_reranker = self.s.use_reranker if use_reranker is None else use_reranker
         self.refusal_threshold = self.s.refusal_threshold if refusal_threshold is None else refusal_threshold
+        self.rerank_mode = rerank_mode or self.s.rerank_mode
         if retriever is None:
             chunks = load_chunks(self.s.chunks_path)
             dense = DenseIndex(self.s.index_dir, Embedder(self.s.embed_model))
@@ -111,7 +113,8 @@ class RAGPipeline:
 
     def retrieve(self, question: str) -> tuple[list[Hit], float]:
         t0 = time.perf_counter()
-        hits = self.retriever.retrieve(question, k=self.s.k_context, mode="hybrid", rerank=self.use_reranker)
+        hits = self.retriever.retrieve(question, k=self.s.k_context, mode="hybrid", rerank=self.use_reranker,
+                                       rerank_mode=self.rerank_mode)
         return hits, (time.perf_counter() - t0) * 1000
 
     def gate(self, hits: list[Hit]) -> str | None:

@@ -76,7 +76,7 @@ def ask(req: AskRequest) -> AskResponse:
 @app.get("/search")
 def search(q: str = Query(..., min_length=2), k: int = Query(5, ge=1, le=20)) -> dict:
     p = get_pipeline()
-    hits = p.retriever.retrieve(q, k=k, mode="hybrid", rerank=p.use_reranker)
+    hits = p.retriever.retrieve(q, k=k, mode="hybrid", rerank=p.use_reranker, rerank_mode=p.rerank_mode)
     return {"query": q, "hits": [{"doc_id": h.chunk.doc_id, "title": h.chunk.title, "page": h.chunk.page,
                                   "url": h.chunk.url, "rerank_score": h.rerank_score,
                                   "snippet": h.chunk.text[:300]} for h in hits]}

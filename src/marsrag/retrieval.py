@@ -189,8 +189,14 @@ class HybridRetriever:
         self.reranker = reranker
         self.k_dense, self.k_bm25, self.rrf_k, self.k_rerank_pool = k_dense, k_bm25, rrf_k, k_rerank_pool
 
-    def retrieve(self, query: str, k: int = 5, mode: str = "hybrid", rerank: bool | None = None) -> list[Hit]:
-        """mode in {bm25, dense, hybrid}. rerank=None -> rerank iff a reranker is configured."""
+    def retrieve(self, query: str, k: int = 5, mode: str = "hybrid", rerank: bool | None = None,
+                 rerank_mode: str = "replace") -> list[Hit]:
+        """mode in {bm25, dense, hybrid}. rerank=None -> rerank iff a reranker is configured.
+
+        rerank_mode: "replace" orders the pool by cross-encoder score alone; "fuse" adds the
+        cross-encoder ranking as a third list in RRF next to BM25 and dense, so it can only
+        nudge the order. Either way every hit in the pool gets a rerank_score (used by the
+        refusal gate)."""
         bm = self.bm25.search(query, self.k_bm25) if mode in ("bm25", "hybrid") else []
         de = self.dense.search(query, self.k_dense) if mode in ("dense", "hybrid") and self.dense else []
         if mode == "hybrid":
@@ -211,5 +217,14 @@ class HybridRetriever:
             scores = self.reranker.score(query, [h.chunk.text for h in pool])
             for h, s in zip(pool, scores):
                 h.rerank_score = s
-            hits = sorted(pool, key=lambda h: -h.rerank_score)
+            by_rerank = sorted(pool, key=lambda h: -h.rerank_score)
+            if rerank_mode == "replace":
+                hits = by_rerank
+            elif rerank_mode == "fuse":
+                lists = [[c for c, _ in bm], [c for c, _ in de]] if mode == "hybrid" else [[h.chunk.chunk_id for h in pool]]
+                lists.append([h.chunk.chunk_id for h in by_rerank])
+                order = {cid: i for i, (cid, _) in enumerate(rrf_fuse(lists, k=self.rrf_k))}
+                hits = sorted(pool, key=lambda h: order.get(h.chunk.chunk_id, 1 << 30))
+            else:
+                raise ValueError(f"unknown rerank_mode {rerank_mode}")
         return hits[:k]
