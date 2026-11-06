@@ -34,7 +34,7 @@ def cmd_index(args) -> int:
     chunks = load_chunks(s.chunks_path)
     t0 = time.perf_counter()
     idx = DenseIndex(s.index_dir, Embedder(s.embed_model))
-    idx.build(chunks)
+    idx.build(chunks, emb_cache=s.data_dir / "embeddings.npz")
     print(f"indexed {idx.count()} chunks in {time.perf_counter() - t0:.1f}s -> {s.index_dir}")
     return 0
 

@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      OMP_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check src tests scripts
+      - name: Unit + data tests (no models, no network)
+        run: pytest -q
+      - name: Offline eval gate
+        # 1) recompute BM25 retrieval on the committed chunks + golden set (no torch, no API)
+        # 2) fail if the committed end-to-end / retrieval results regress below thresholds
+        run: |
+          python -m marsrag.eval.run_retrieval --bm25-only --min-doc-hit5 0.9
+          python scripts/check_eval_gate.py

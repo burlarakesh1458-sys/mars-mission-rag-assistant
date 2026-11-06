@@ -8,3 +8,4 @@ data/index/
 venv*/
 .pytest_cache/
 .ruff_cache/
+data/embeddings.partial.npz

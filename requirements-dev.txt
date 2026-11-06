@@ -1,0 +1,9 @@
+# Lightweight set used by CI: tests + lint + the BM25 offline eval gate (no torch needed)
+rank-bm25==0.2.2
+fastapi==0.162.0
+httpx==0.28.1
+pydantic==2.14.3
+numpy==2.5.4
+pymupdf==2.1
+pytest==9.2.0
+ruff==0.17.4

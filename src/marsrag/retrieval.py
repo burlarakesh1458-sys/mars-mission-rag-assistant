@@ -104,22 +104,51 @@ class DenseIndex:
     def count(self) -> int:
         return self.col.count()
 
-    def build(self, chunks: list[Chunk], batch: int = 64, log=print) -> None:
+    def build(self, chunks: list[Chunk], batch: int = 64, log=print, emb_cache: Path | None = None) -> None:
+        """Embed all chunks (or load cached embeddings if the cache matches) and (re)create the collection."""
+        import time
+
+        import numpy as np
+
+        embs = None
+        if emb_cache is not None and emb_cache.exists():
+            data = np.load(emb_cache, allow_pickle=False)
+            if list(data["ids"]) == [c.chunk_id for c in chunks]:
+                embs = data["embs"]
+                log(f"  loaded cached embeddings {embs.shape} from {emb_cache}")
+        if embs is None:
+            ids = [c.chunk_id for c in chunks]
+            parts, start, t0 = [], 0, time.perf_counter()
+            partial = emb_cache.with_suffix(".partial.npz") if emb_cache is not None else None
+            if partial is not None and partial.exists():  # resume an interrupted run
+                data = np.load(partial, allow_pickle=False)
+                n = len(data["ids"])
+                if list(data["ids"]) == ids[:n]:
+                    parts, start = [data["embs"]], n
+                    log(f"  resuming from {n} cached embeddings")
+            for i in range(start, len(chunks), batch):
+                part = chunks[i:i + batch]
+                parts.append(self.embedder.encode_docs([f"{c.title}\n{c.text}" for c in part]))
+                done = i + len(part)
+                if log:
+                    log(f"  embedded {done}/{len(chunks)} ({time.perf_counter() - t0:.0f}s)")
+                if partial is not None and (done // batch) % 4 == 0:
+                    np.savez(partial, ids=np.array(ids[:done]), embs=np.vstack(parts).astype("float32"))
+            embs = np.vstack(parts).astype("float32")
+            if partial is not None:
+                partial.unlink(missing_ok=True)
+            if emb_cache is not None:
+                emb_cache.parent.mkdir(parents=True, exist_ok=True)
+                np.savez(emb_cache, ids=np.array([c.chunk_id for c in chunks]), embs=embs)
         try:
             self.client.delete_collection(self.COLLECTION)
         except Exception:  # noqa: BLE001
             pass
         self.col = self.client.get_or_create_collection(self.COLLECTION, metadata={"hnsw:space": "cosine"})
-        for i in range(0, len(chunks), batch):
-            part = chunks[i:i + batch]
-            embs = self.embedder.encode_docs([f"{c.title}\n{c.text}" for c in part])
-            self.col.add(
-                ids=[c.chunk_id for c in part],
-                embeddings=[e.tolist() for e in embs],
-                metadatas=[{"doc_id": c.doc_id, "page": c.page} for c in part],
-            )
-            if log and (i // batch) % 10 == 0:
-                log(f"  embedded {i + len(part)}/{len(chunks)}")
+        for i in range(0, len(chunks), 1000):
+            part = chunks[i:i + 1000]
+            self.col.add(ids=[c.chunk_id for c in part], embeddings=embs[i:i + 1000].tolist(),
+                         metadatas=[{"doc_id": c.doc_id, "page": c.page} for c in part])
 
     def search(self, query: str, k: int) -> list[tuple[str, float]]:
         q = self.embedder.encode_query(query)

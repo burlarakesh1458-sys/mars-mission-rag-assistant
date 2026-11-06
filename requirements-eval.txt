@@ -1,0 +1,3 @@
+# Evaluation extras (Ragas + LangChain judge client)
+ragas==0.4.3
+langchain-openai==1.7.4
