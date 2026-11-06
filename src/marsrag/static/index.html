@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mars Mission Research Assistant</title>
+<style>
+  :root { --bg:#120d0b; --panel:#1d1512; --ink:#f3e9e2; --muted:#b39d90; --mars:#d4572a; --ok:#6fbf73; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; } h1 span { color: var(--mars); }
+  p.sub { color: var(--muted); margin: 0 0 24px; }
+  form { display:flex; gap:8px; }
+  input { flex:1; padding:12px 14px; border-radius:10px; border:1px solid #3a2c26; background:var(--panel); color:var(--ink); font-size:16px; }
+  button { padding:12px 18px; border-radius:10px; border:0; background:var(--mars); color:#fff; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .examples { margin:12px 0 24px; display:flex; flex-wrap:wrap; gap:8px; }
+  .examples a { font-size:13px; color:var(--muted); border:1px solid #3a2c26; padding:4px 10px; border-radius:999px; cursor:pointer; text-decoration:none; }
+  .card { background:var(--panel); border:1px solid #2e231f; border-radius:12px; padding:18px 20px; margin-top:16px; }
+  .refused { border-color:#7a5a2a; }
+  .tag { font-size:12px; color:var(--muted); }
+  ol.cites { padding-left: 20px; } ol.cites li { margin: 6px 0; }
+  a { color: #f0a37f; }
+  details { margin-top: 12px; color: var(--muted); font-size: 14px; }
+  .snip { border-left: 2px solid #3a2c26; padding-left: 10px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Mars Mission <span>Research Assistant</span></h1>
+  <p class="sub">Answers only from public NASA Technical Reports Server documents on human Mars missions, with report, page and link for every claim. Declines when the reports don't cover the question.</p>
+  <form id="f"><input id="q" placeholder="Why is sending humans to Mars so difficult?" autocomplete="off"><button id="b">Ask</button></form>
+  <div class="examples">
+    <a>What radiation dose would a 700 to 900 day Mars mission give the crew?</a>
+    <a>What ratio of hydrogen to CO2 does the Sabatier reaction need?</a>
+    <a>When did someone last go to the Moon?</a>
+  </div>
+  <div id="out"></div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+document.querySelectorAll('.examples a').forEach(a => a.onclick = () => { $('#q').value = a.textContent; ask(); });
+$('#f').onsubmit = (e) => { e.preventDefault(); ask(); };
+async function ask() {
+  const q = $('#q').value.trim(); if (!q) return;
+  $('#b').disabled = true; $('#out').innerHTML = '<div class="card tag">Searching NASA reports…</div>';
+  try {
+    const r = await fetch('/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question:q})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    const ans = esc(d.answer).replace(/\[(\d+)\]/g, '<sup>[$1]</sup>');
+    const cites = d.citations.map(c => `<li><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.title)}</a>, p. ${c.page} <span class="tag">NTRS ${esc(c.doc_id)}</span></li>`).join('');
+    const ctx = d.contexts.map((c,i) => `<div class="snip">[${i+1}] ${esc(c.title)}, p. ${c.page}${c.rerank_score!=null?` · rerank ${c.rerank_score.toFixed(2)}`:''}<br>${esc(c.snippet)}…</div>`).join('');
+    $('#out').innerHTML = `<div class="card ${d.refused?'refused':''}">
+      ${d.refused ? '<div class="tag">Declined: ' + esc(d.refusal_reason) + '</div>' : ''}
+      <div>${ans}</div>
+      ${cites ? '<ol class="cites">' + cites + '</ol>' : ''}
+      <div class="tag">${Math.round(d.timings_ms.total)} ms (retrieval ${Math.round(d.timings_ms.retrieve)} ms)</div>
+      <details><summary>Retrieved excerpts</summary>${ctx}</details></div>`;
+  } catch (err) { $('#out').innerHTML = `<div class="card refused">Error: ${esc(err.message)}</div>`; }
+  $('#b').disabled = false;
+}
+</script>
+</body>
+</html>

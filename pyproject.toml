@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "marsrag"
+version = "0.1.0"
+description = "Mars Mission Research Assistant: hybrid-retrieval RAG over NASA Technical Reports Server PDFs, with citations and calibrated refusal"
+authors = [{ name = "Rakesh Burla", email = "burlarakesh1458@gmail.com" }]
+license = { text = "MIT" }
+requires-python = ">=3.11"
+readme = "README.md"
+
+[project.scripts]
+marsrag = "marsrag.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+marsrag = ["static/*"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+
+[tool.ruff.lint]
+per-file-ignores = { "scripts/finalize_golden.py" = ["E501"], "scripts/draft_golden.py" = ["E501"] }
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["B008", "B905"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["models: needs the local embedding / reranker models (skipped in CI if absent)"]

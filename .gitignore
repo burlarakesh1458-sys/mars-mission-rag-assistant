@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.cache/
+data/pdfs/
+data/index/
+*.egg-info/
+.venv/
+venv*/
+.pytest_cache/
+.ruff_cache/
