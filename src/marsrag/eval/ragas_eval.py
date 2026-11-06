@@ -26,6 +26,26 @@ from .metrics import gold_sources, load_jsonl
 REPORTS = ROOT / "reports"
 
 
+def _shim_vertexai() -> None:
+    """ragas 0.4.3 imports VertexAI classes that langchain-community 0.4 removed. We never use
+    Vertex, so register placeholder classes if the real ones are missing."""
+    import sys
+    import types
+
+    try:
+        from langchain_community.chat_models.vertexai import ChatVertexAI  # noqa: F401
+    except ImportError:
+        mod = types.ModuleType("langchain_community.chat_models.vertexai")
+        mod.ChatVertexAI = type("ChatVertexAI", (), {})
+        sys.modules[mod.__name__] = mod
+    import langchain_community.llms as llms
+
+    try:
+        llms.VertexAI  # noqa: B018
+    except (ImportError, AttributeError):
+        llms.VertexAI = type("VertexAI", (), {})
+
+
 def reference_contexts(row: dict, chunks_by_loc: dict) -> list[str]:
     ctx = []
     for d, p in gold_sources(row):
@@ -61,8 +81,11 @@ def main(argv=None) -> int:
     ap.add_argument("--judge", default="openai/gpt-oss-120b")
     ap.add_argument("--max-llm-samples", type=int, default=40)
     ap.add_argument("--no-llm", action="store_true")
+    ap.add_argument("--faithfulness-only", action="store_true",
+                    help="LLM-judge only Faithfulness (saves judge quota; retrieval uses the non-LLM metrics)")
     args = ap.parse_args(argv)
 
+    _shim_vertexai()
     from ragas import SingleTurnSample
     from ragas.metrics import (
         Faithfulness,
@@ -88,12 +111,16 @@ def main(argv=None) -> int:
         llm_metrics = {"faithfulness": Faithfulness(llm=judge),
                        "llm_context_precision": LLMContextPrecisionWithReference(llm=judge),
                        "llm_context_recall": LLMContextRecall(llm=judge)}
+        if args.faithfulness_only:
+            llm_metrics = {"faithfulness": llm_metrics["faithfulness"]}
 
     n_llm = sum(1 for r in done.values() if "faithfulness" in r)
     with samples_path.open("a") as f:
         for r in rows:
             prev = done.get(r["id"], {})
             want_llm = bool(llm_metrics) and "faithfulness" not in prev and n_llm < args.max_llm_samples
+            if want_llm and r["refused"] and set(llm_metrics) == {"faithfulness"}:
+                want_llm = False  # nothing to judge for a declined answer
             if prev and not want_llm:
                 continue
             sample = SingleTurnSample(

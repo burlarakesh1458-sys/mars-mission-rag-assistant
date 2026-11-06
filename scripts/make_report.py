@@ -37,9 +37,11 @@ def main() -> int:
         out.append("")
     e2e = json.loads((R / "e2e_eval.json").read_text()) if (R / "e2e_eval.json").exists() else {}
     if e2e:
-        out += ["## End-to-end (50 golden questions: 40 answerable, 10 unanswerable)", "",
+        out += ["## End-to-end", "", "Questions scored per config (golden set: 50 = 40 answerable + 10 unanswerable): "
+                + ", ".join(f"`{c}` {v['n']} ({v['n_answerable']} answerable, {v['n_unanswerable']} unanswerable)"
+                            for c, v in e2e.items()), "",
                 "| Metric | " + " | ".join(e2e) + " |", "|---|" + "---|" * len(e2e)]
-        rows = [("Refusal accuracy (all 50)", "refusal_accuracy", pct),
+        rows = [("Refusal accuracy (all scored)", "refusal_accuracy", pct),
                 ("Unanswerable correctly declined", "unanswerable_declined_rate", pct),
                 ("Answerable wrongly declined", "answerable_false_refusal_rate", pct),
                 ("Answered with >=1 citation", "citation_present_rate", pct),
@@ -49,22 +51,35 @@ def main() -> int:
                 ("Latency p95, retrieval", "latency_retrieve_ms_p95", ms),
                 ("Latency p50, end-to-end", "latency_total_ms_p50", ms),
                 ("Latency p95, end-to-end", "latency_total_ms_p95", ms),
-                ("Latency p50, LLM call", "latency_llm_ms_p50", ms),
-                ("Latency p95, LLM call", "latency_llm_ms_p95", ms)]
+                ("Latency p50, end-to-end excl. rate-limit waits", "latency_total_excl_ratelimit_ms_p50", ms),
+                ("Latency p95, end-to-end excl. rate-limit waits", "latency_total_excl_ratelimit_ms_p95", ms),
+                ("Latency p50, LLM call incl. retries", "latency_llm_ms_p50", ms),
+                ("Latency p95, LLM call incl. retries", "latency_llm_ms_p95", ms)]
         for label, key, f in rows:
             out.append(f"| {label} | " + " | ".join(f(v.get(key)) for v in e2e.values()) + " |")
         out.append("")
     rag = json.loads((R / "ragas_eval.json").read_text()) if (R / "ragas_eval.json").exists() else {}
     for cfg, v in rag.items():
-        out += [f"## Ragas ({cfg}; judge `{v['judge_model']}`)", "", "| Metric | mean | n |", "|---|---|---|"]
+        judged = (v.get("faithfulness") or {}).get("n", 0)
+        label = f"judge `{v['judge_model']}`" if judged else "non-LLM metrics only"
+        out += [f"## Ragas ({cfg}; {label})", "", "| Metric | mean | n |", "|---|---|---|"]
         for k in ("llm_context_precision", "llm_context_recall", "faithfulness",
                   "nonllm_context_precision", "nonllm_context_recall"):
             m = v.get(k) or {}
-            out.append(f"| {k} | {'n/a' if m.get('mean') is None else f'{m['mean']:.3f}'} | {m.get('n', 0)} |")
+            mean = "n/a" if m.get("mean") is None else f"{m['mean']:.3f}"
+            out.append(f"| {k} | {mean} | {m.get('n', 0)} |")
         out.append("")
-    ans_path = R / "answers_rerank.jsonl"
+    cfg = "rerank_fused" if (R / "answers_rerank_fused.jsonl").exists() else "rerank"
+    ans_path = R / f"answers_{cfg}.jsonl"
     if ans_path.exists():
         rows = load_jsonl(ans_path)
+        models: dict = {}
+        for r in rows:
+            llm = r.get("llm") or {}
+            key = f"{llm.get('provider')} / {llm.get('model')}" if llm else "none (declined by the retrieval gate)"
+            models[key] = models.get(key, 0) + 1
+        out += [f"## Which model answered ({cfg}, {len(rows)} questions)", "", "| Provider / model | questions |",
+                "|---|---|"] + [f"| {k} | {v} |" for k, v in sorted(models.items(), key=lambda kv: -kv[1])] + [""]
         good, bad = [], []
         for r in rows:
             if r["answerable"]:
@@ -72,7 +87,7 @@ def main() -> int:
             else:
                 ok = r["refused"]
             (good if ok else bad).append(r)
-        out += [f"## Examples (config `rerank`): {len(good)} correct, {len(bad)} not", ""]
+        out += [f"## Examples (config `{cfg}`): {len(good)} correct, {len(bad)} not", ""]
 
         def show(r):
             lines = [f"**{r['id']}. {r['question']}**", ""]
@@ -81,6 +96,8 @@ def main() -> int:
             lines.append(f"- Got: {'DECLINED (' + str(r['refusal_reason']) + ')' if r['refused'] else r['answer']}")
             for c in r["citations"]:
                 lines.append(f"  - [{c['n']}] {c['title']}, p. {c['page']} — {c['url']}")
+            if r.get("llm"):
+                lines.append(f"- Answered by: `{r['llm'].get('model')}`")
             if r["contexts"] and r["contexts"][0].get("rerank_score") is not None:
                 lines.append(f"- Top rerank score: {r['contexts'][0]['rerank_score']:.2f}")
             return lines + [""]
@@ -93,8 +110,66 @@ def main() -> int:
         for r in bad:
             out += show(r)
     (R / "RESULTS.md").write_text("\n".join(out))
+    if ans_path.exists():
+        update_readme(ret, e2e.get(cfg), rag.get(cfg), cfg, [show(r) for r in picks[:2] + picks[-1:]],
+                      [show(r) for r in bad[:3]], len(good), len(bad))
     print("\n".join(out[:80]))
     return 0
+
+
+def update_readme(ret, e, rg, cfg, worked, failed, n_good, n_bad) -> None:
+    lines = ["## Results", "",
+             "All numbers below are measured by the scripts in this repo; full tables in [`reports/RESULTS.md`](reports/RESULTS.md).", ""]
+    if ret:
+        lines += [f"**Retrieval** ({ret['n_questions']} answerable questions, {ret['n_chunks']} chunks)", "",
+                  "| Retriever | page hit@5 | page MRR@10 | doc hit@5 | latency p50 |", "|---|---|---|---|---|"]
+        for name, v in ret["configs"].items():
+            m = v["metrics"]
+            lines.append(f"| {name} | {m['page_hit@5']:.3f} | {m['page_mrr@10']:.3f} | {m['doc_hit@5']:.3f} | "
+                         f"{ms(m['latency_ms_p50'])} |")
+        lines.append("")
+    if e:
+        lines += [f"**End-to-end** (`{cfg}`, {e['n']} golden questions: {e['n_answerable']} answerable, "
+                  f"{e['n_unanswerable']} unanswerable)", "", "| Metric | Value |", "|---|---|",
+                  f"| Refusal accuracy (all {e['n']}) | {pct(e['refusal_accuracy'])} |",
+                  f"| Unanswerable correctly declined | {pct(e['unanswerable_declined_rate'])} |",
+                  f"| Answerable wrongly declined | {pct(e['answerable_false_refusal_rate'])} |",
+                  f"| Citation accuracy, page level ({e['answered_answerable']} answered) | {pct(e['citation_accuracy_page'])} |",
+                  f"| Citation accuracy, report level | {pct(e['citation_accuracy_doc'])} |",
+                  f"| Latency p50 / p95, end-to-end as measured | {ms(e['latency_total_ms_p50'])} / {ms(e['latency_total_ms_p95'])} |",
+                  f"| Latency p50 / p95, excl. rate-limit waits | {ms(e.get('latency_total_excl_ratelimit_ms_p50'))} / "
+                  f"{ms(e.get('latency_total_excl_ratelimit_ms_p95'))} |",
+                  f"| Latency p50, retrieval + rerank (CPU, 1 thread) | {ms(e['latency_retrieve_ms_p50'])} |", ""]
+        n_gold = len(load_jsonl(ROOT / "eval" / "golden.jsonl"))
+        if e["n"] < n_gold:
+            lines += [f"> **Partial run: {e['n']} of {n_gold} golden questions.** Every free Groq model in the fallback "
+                      "chain hit its 200k tokens/day cap (shared with other projects on the same key) before the "
+                      f"remaining {n_gold - e['n']} could be answered; the runner is resumable "
+                      "(`make eval-e2e` continues where it stopped). No numbers are extrapolated.", ""]
+        lines += ["Latency was measured on a shared 2-vCPU sandbox with 1 torch thread while other jobs ran; "
+                  "the cross-encoder rerank of 20 candidates is most of the retrieval time.", ""]
+        by = e.get("answered_by") or {}
+        lines += ["Answered by: " + ", ".join(f"`{k}` {v}" for k, v in sorted(by.items(), key=lambda kv: -kv[1])) + "", ""]
+    if rg:
+        parts = []
+        for k in ("nonllm_context_precision", "nonllm_context_recall", "faithfulness"):
+            m = rg.get(k) or {}
+            if m.get("mean") is not None:
+                parts.append(f"{k} {m['mean']:.3f} (n={m['n']})")
+        judged = (rg.get("faithfulness") or {}).get("n", 0)
+        head = (f"**Ragas** (faithfulness judged by `{rg['judge_model']}`)" if judged
+                else "**Ragas** (non-LLM metrics only; LLM-judged faithfulness not run, no judge quota left)")
+        lines += [f"{head}: " + "; ".join(parts), ""]
+    lines += [f"### Worked examples ({n_good} of {n_good + n_bad} correct)", ""]
+    for w in worked:
+        lines += w
+    lines += ["### Failed examples (all failures are listed in reports/RESULTS.md)", ""]
+    for f in failed:
+        lines += f
+    readme = ROOT / "README.md"
+    txt = readme.read_text()
+    a, b = txt.index("<!-- RESULTS_START -->"), txt.index("<!-- RESULTS_END -->")
+    readme.write_text(txt[:a] + "<!-- RESULTS_START -->\n" + "\n".join(lines) + "\n" + txt[b:])
 
 
 if __name__ == "__main__":

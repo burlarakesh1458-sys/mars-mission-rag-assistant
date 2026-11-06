@@ -8,6 +8,7 @@ minutes, so chaining steps here instead of separate CLI calls saves most of the 
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -33,7 +34,7 @@ def main(steps: list[str]) -> int:
             run_retrieval.main([])
         elif step.startswith("e2e:"):
             from marsrag.eval import run_e2e
-            run_e2e.main(["--config", step.split(":", 1)[1]])
+            run_e2e.main(["--config", step.split(":", 1)[1], "--patience-s", os.environ.get("E2E_PATIENCE_S", "0")])
         elif step == "summarize":
             from marsrag.eval import run_e2e
             run_e2e.main(["--summarize"])

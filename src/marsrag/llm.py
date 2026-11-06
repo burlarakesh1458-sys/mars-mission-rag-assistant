@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -72,7 +73,7 @@ class Provider:
 class ChatClient:
     def __init__(self, model: str, providers: list[Provider], cache_path: Path | None = None,
                  temperature: float = 0.0, max_tokens: int = 900, timeout_s: float = 90,
-                 max_retries: int = 5, transport: httpx.BaseTransport | None = None):
+                 max_retries: int = 8, min_fit_tokens: int = 220, transport: httpx.BaseTransport | None = None):
         if not providers:
             raise ValueError("need at least one provider")
         self.model = model
@@ -80,6 +81,7 @@ class ChatClient:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.max_retries = max_retries
+        self.min_fit_tokens = min_fit_tokens
         self.cache = ResponseCache(cache_path) if cache_path else None
         self._http = httpx.Client(timeout=timeout_s, transport=transport)
 
@@ -134,16 +136,30 @@ class ChatClient:
                 data = r.json()
                 msg = data["choices"][0]["message"]
                 usage = data.get("usage") or {}
+                if not (msg.get("content") or "").strip() and data["choices"][0].get("finish_reason") == "length":
+                    # reasoning used the whole budget: an empty answer is not a refusal, try the next provider
+                    raise LLMError("empty completion (finish_reason=length)")
                 return LLMResponse(text=(msg.get("content") or "").strip(), model=data.get("model", model),
                                    provider=prov.name, prompt_tokens=usage.get("prompt_tokens", 0),
                                    completion_tokens=usage.get("completion_tokens", 0),
                                    latency_s=time.perf_counter() - t0, raw=data)
+            if r.status_code == 413 and (m := re.search(r"Limit (\d+), Requested (\d+)", r.text)):
+                # request bigger than the model's tokens-per-minute cap (e.g. 2,000 TPM on gpt-oss-safeguard-20b):
+                # Groq counts prompt + max_tokens, so shrink max_tokens to fit if a useful budget is left
+                fit = body["max_tokens"] - (int(m.group(2)) - int(m.group(1))) - 16
+                if fit >= self.min_fit_tokens and attempt < self.max_retries:
+                    log.info("%s: TPM cap, retrying with max_tokens=%d", prov.name, fit)
+                    body["max_tokens"] = fit
+                    continue
+                raise LLMError(f"request exceeds TPM cap even with max_tokens={fit}: {r.text[:200]}")
             if r.status_code == 429 and "per day" in r.text:
                 # daily quota: waiting won't help within this run, move on to the next provider
                 raise LLMError(f"daily quota exhausted: {r.text[:200]}")
             if r.status_code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
                 ra = r.headers.get("retry-after")
                 wait = float(ra) if ra and ra.replace(".", "").isdigit() else delay
+                if m := re.search(r"try again in (\d+(?:\.\d+)?)s", r.text):
+                    wait = max(wait, float(m.group(1)) + 1)
                 wait = min(wait, 60)
                 log.info("%s %s, sleeping %.1fs: %s", prov.name, r.status_code, wait, r.text[:200])
                 time.sleep(wait)
@@ -158,6 +174,9 @@ def default_client(settings) -> ChatClient:
                  # same weights on a second provider, then the larger sibling on Groq (separate daily quota)
                  Provider("nvidia", settings.llm_fallback_base_url, settings.llm_fallback_key_env),
                  Provider("groq-120b", settings.llm_base_url, settings.llm_key_env, model="openai/gpt-oss-120b"),
-                 Provider("groq-qwen", settings.llm_base_url, settings.llm_key_env, model="qwen/qwen3.8-27b")]
+                 Provider("groq-qwen", settings.llm_base_url, settings.llm_key_env, model="qwen/qwen3.8-27b"),
+                 # gpt-oss-safeguard-20b: same gpt-oss-20b base, separate Groq daily quota
+                 Provider("groq-safeguard-20b", settings.llm_base_url, settings.llm_key_env,
+                          model="openai/gpt-oss-safeguard-20b")]
     return ChatClient(settings.llm_model, providers, cache_path=settings.cache_dir / "llm_cache.sqlite",
                       max_tokens=settings.llm_max_tokens)

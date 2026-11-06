@@ -23,6 +23,13 @@ Rules:
 4. Be concise: 2-5 sentences. Keep numbers and units exactly as written in the excerpts."""
 
 _CITE = re.compile(r"\[(\d{1,2})\]")
+# gpt-oss models sometimes emit their native citation style 【2】 or 【1†L2-L4】 instead of [2]
+_ALT_CITE = re.compile(r"【(\d{1,2})(?:†[^】]*)?】")
+
+
+def normalize_citations(text: str) -> str:
+    """Rewrite 【n】 / 【n†...】 markers to the [n] form the validator understands."""
+    return _ALT_CITE.sub(lambda m: f"[{m.group(1)}]", text)
 
 
 @dataclass
@@ -145,6 +152,7 @@ class RAGPipeline:
         timings = {"retrieve": t_ret, "llm": t_llm, "total": (time.perf_counter() - t_all) * 1000}
         if is_refusal(resp.text):
             return Answer(question, REFUSAL_MESSAGE, True, "llm_declined", [], contexts, timings, llm_meta)
-        cits, invalid = parse_citations(resp.text, hits)
-        text = strip_invalid(resp.text, invalid)
+        text = normalize_citations(resp.text)
+        cits, invalid = parse_citations(text, hits)
+        text = strip_invalid(text, invalid)
         return Answer(question, text, False, None, cits, contexts, timings, llm_meta)

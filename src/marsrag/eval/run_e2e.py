@@ -26,7 +26,7 @@ def answers_path(config: str) -> Path:
     return REPORTS / f"answers_{config}.jsonl"
 
 
-def run(config: str, golden: list[dict], limit: int | None = None) -> None:
+def run(config: str, golden: list[dict], limit: int | None = None, patience_s: float = 0) -> None:
     from ..pipeline import RAGPipeline
 
     # rerank: contexts ordered by cross-encoder; rerank_fused: RRF(BM25, dense, cross-encoder);
@@ -39,21 +39,32 @@ def run(config: str, golden: list[dict], limit: int | None = None) -> None:
     todo = [g for g in golden if g["id"] not in done][:limit]
     print(f"{config}: {len(done)} done, {len(todo)} to go")
     pipe.retriever.retrieve("warm up", k=3, mode="hybrid", rerank=pipe.use_reranker)
+    deadline = time.time() + patience_s
     with out.open("a") as f:
-        for g in todo:
-            try:
-                a = pipe.answer(g["question"])
-            except Exception as e:  # noqa: BLE001 - rate limit / network: stop, resume later
-                print(f"stopped at {g['id']}: {e}")
+        while todo:
+            skipped = []
+            for g in todo:
+                try:
+                    a = pipe.answer(g["question"])
+                except Exception as e:  # noqa: BLE001 - every provider rate limited: skip, retry next pass
+                    print(f"  {g['id']} skipped this pass: {str(e)[:120]}", flush=True)
+                    skipped.append(g)
+                    continue
+                row = {"id": g["id"], "answerable": g["answerable"], "question": g["question"],
+                       "gold_doc_id": g.get("gold_doc_id"), "gold_pages": g.get("gold_pages"),
+                       "gold_sources": g.get("gold_sources"),
+                       "reference": g.get("reference"), **a.to_dict(), "ts": time.time()}
+                f.write(json.dumps(row) + "\n")
+                f.flush()
+                tag = "REFUSED" if a.refused else f"{len(a.citations)} cites"
+                print(f"  {g['id']} {tag} {a.timings_ms['total']:.0f}ms", flush=True)
+            todo = skipped
+            if todo and time.time() + 120 < deadline:
+                print(f"{len(todo)} questions waiting for LLM quota; next pass in 120s", flush=True)
+                time.sleep(120)
+            elif todo:
+                print(f"stopped with {len(todo)} unanswered (no LLM quota): {[g['id'] for g in todo]}")
                 break
-            row = {"id": g["id"], "answerable": g["answerable"], "question": g["question"],
-                   "gold_doc_id": g.get("gold_doc_id"), "gold_pages": g.get("gold_pages"),
-                   "gold_sources": g.get("gold_sources"),
-                   "reference": g.get("reference"), **a.to_dict(), "ts": time.time()}
-            f.write(json.dumps(row) + "\n")
-            f.flush()
-            tag = "REFUSED" if a.refused else f"{len(a.citations)} cites"
-            print(f"  {g['id']} {tag} {a.timings_ms['total']:.0f}ms")
 
 
 def summarize_config(rows: list[dict]) -> dict:
@@ -66,6 +77,10 @@ def summarize_config(rows: list[dict]) -> dict:
     with_cites = [r for r in answered if r["citations"]]
     # latency: only rows where the LLM was actually called live (not served from cache) or gated
     live = [r for r in rows if not r.get("llm", {}).get("cached", False)]
+    def no_wait(r):  # retrieval + the successful LLM request only (drops rate-limit sleeps / failed providers)
+        llm = r.get("llm") or {}
+        return r["timings_ms"]["retrieve"] + llm.get("provider_latency_ms", 0.0) if llm else r["timings_ms"]["total"]
+
     m = {
         "n": len(rows),
         **refusal_metrics(rows),
@@ -77,12 +92,19 @@ def summarize_config(rows: list[dict]) -> dict:
         "latency_n_live": len(live),
         "latency_total_ms_p50": percentile([r["timings_ms"]["total"] for r in live], 50),
         "latency_total_ms_p95": percentile([r["timings_ms"]["total"] for r in live], 95),
+        "latency_total_excl_ratelimit_ms_p50": percentile([no_wait(r) for r in live], 50),
+        "latency_total_excl_ratelimit_ms_p95": percentile([no_wait(r) for r in live], 95),
         "latency_retrieve_ms_p50": percentile([r["timings_ms"]["retrieve"] for r in rows], 50),
         "latency_retrieve_ms_p95": percentile([r["timings_ms"]["retrieve"] for r in rows], 95),
         "latency_llm_ms_p50": percentile([r["timings_ms"]["llm"] for r in live if r["timings_ms"]["llm"] > 0], 50),
         "latency_llm_ms_p95": percentile([r["timings_ms"]["llm"] for r in live if r["timings_ms"]["llm"] > 0], 95),
         "refusal_reasons": {},
+        "answered_by": {},
     }
+    for r in rows:
+        llm = r.get("llm") or {}
+        key = llm.get("model", "?") if llm else "retrieval_gate (no LLM call)"
+        m["answered_by"][key] = m["answered_by"].get(key, 0) + 1
     for r in rows:
         if r["refused"]:
             key = (r["refusal_reason"] or "").split("(")[0]
@@ -107,9 +129,11 @@ def main(argv=None) -> int:
     ap.add_argument("--config", choices=["rerank", "rerank_fused", "no_rerank"], default="rerank_fused")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--summarize", action="store_true")
+    ap.add_argument("--patience-s", type=float, default=0,
+                    help="keep re-trying rate-limited questions in passes for up to this many seconds")
     args = ap.parse_args(argv)
     if not args.summarize:
-        run(args.config, load_jsonl(args.golden), args.limit)
+        run(args.config, load_jsonl(args.golden), args.limit, args.patience_s)
     summarize(["rerank_fused", "rerank", "no_rerank"])
     return 0
 

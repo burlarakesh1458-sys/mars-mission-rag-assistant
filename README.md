@@ -8,7 +8,75 @@ Hybrid BM25 + dense retrieval fused with Reciprocal Rank Fusion, a cross-encoder
 Author: Rakesh Burla (B.Tech Mechanical Engineering, RGUKT Basar) · `burlarakesh1458-sys`
 
 <!-- RESULTS_START -->
-(results are filled in from `reports/` below)
+## Results
+
+All numbers below are measured by the scripts in this repo; full tables in [`reports/RESULTS.md`](reports/RESULTS.md).
+
+**Retrieval** (40 answerable questions, 2391 chunks)
+
+| Retriever | page hit@5 | page MRR@10 | doc hit@5 | latency p50 |
+|---|---|---|---|---|
+| bm25 | 0.950 | 0.849 | 1.000 | 10 ms |
+| dense | 0.875 | 0.701 | 0.950 | 71 ms |
+| hybrid_rrf | 0.900 | 0.819 | 0.975 | 87 ms |
+| hybrid_rrf+rerank | 0.800 | 0.706 | 0.975 | 4,061 ms |
+| dense+rerank | 0.750 | 0.704 | 0.950 | 4,254 ms |
+| hybrid_rrf+rerank_fused | 0.925 | 0.801 | 1.000 | 4,385 ms |
+
+**End-to-end** (`rerank_fused`, 26 golden questions: 18 answerable, 8 unanswerable)
+
+| Metric | Value |
+|---|---|
+| Refusal accuracy (all 26) | 96.2% |
+| Unanswerable correctly declined | 100.0% |
+| Answerable wrongly declined | 5.6% |
+| Citation accuracy, page level (17 answered) | 100.0% |
+| Citation accuracy, report level | 100.0% |
+| Latency p50 / p95, end-to-end as measured | 5,493 ms / 7,900 ms |
+| Latency p50 / p95, excl. rate-limit waits | 5,350 ms / 6,620 ms |
+| Latency p50, retrieval + rerank (CPU, 1 thread) | 5,031 ms |
+
+> **Partial run: 26 of 50 golden questions.** Every free Groq model in the fallback chain hit its 200k tokens/day cap (shared with other projects on the same key) before the remaining 24 could be answered; the runner is resumable (`make eval-e2e` continues where it stopped). No numbers are extrapolated.
+
+Latency was measured on a shared 2-vCPU sandbox with 1 torch thread while other jobs ran; the cross-encoder rerank of 20 candidates is most of the retrieval time.
+
+Answered by: `retrieval_gate (no LLM call)` 8, `openai/gpt-oss-120b` 6, `openai/gpt-oss-20b` 5, `qwen/qwen3.8-27b` 5, `openai/gpt-oss-safeguard-20b` 2
+
+**Ragas** (non-LLM metrics only; LLM-judged faithfulness not run, no judge quota left): nonllm_context_precision 0.786 (n=18); nonllm_context_recall 0.690 (n=18)
+
+### Worked examples (25 of 26 correct)
+
+**q01. Which turbulence model with the Catris-Aupoix compressibility correction is used in the NASA FUN3D solver for the Mars supersonic retropropulsion investigation?**
+
+- Expected: Spalart-Allmaras (gold: NTRS 20210024976 p. [5])
+- Got: The NASA FUN3D solver uses the Spalart‑Allmaras turbulence model with the Catris‑Aupoix compressibility correction. [1]
+  - [1] Computational Investigation of the Effect of Chemistry on Mars Supersonic Retropropulsion Environments, p. 5 — https://ntrs.nasa.gov/citations/20210024976
+- Answered by: `openai/gpt-oss-20b`
+- Top rerank score: 6.03
+
+**q02. In the Sabatier reactor system integration testing, what was the constant ratio of external H2 distribution to the main port, window sweep port, and view sweep port?**
+
+- Expected: 56% to the main port, 35% to the window sweep port, and 9% to the view sweep port (gold: NTRS 20100036570 p. [9])
+- Got: The external hydrogen was distributed to the ports in a fixed ratio of 56 % to the main port, 35 % to the window sweep port, and 9 % to the view sweep port. [2]
+  - [2] Sabatier Reactor System Integration with Microwave Plasma Methane Pyrolysis Post-Processor for Closed-Loop Hydrogen Recovery, p. 9 — https://ntrs.nasa.gov/citations/20100036570
+- Answered by: `openai/gpt-oss-20b`
+- Top rerank score: 6.46
+
+**q42. What is the price of a ticket for a SpaceX Starship flight to Mars?**
+
+- Expected: decline (not in the reports)
+- Got: DECLINED (low_relevance(top_rerank=-9.71<-6.10))
+- Top rerank score: -9.71
+
+### Failed examples (all failures are listed in reports/RESULTS.md)
+
+**q16. What is the total trip duration in days for the 50,000 kg payload Mars cargo mission departing Earth on 2028-03-26 and arriving on 2030-01-30?**
+
+- Expected: 675.0 days (gold: NTRS 20160010261 p. [32])
+- Got: DECLINED (llm_declined)
+- Answered by: `qwen/qwen3.8-27b`
+- Top rerank score: 6.27
+
 <!-- RESULTS_END -->
 
 ## Architecture
@@ -54,6 +122,7 @@ flowchart LR
 | **Two refusal layers** | The gate catches off-topic questions cheaply; the prompt's `INSUFFICIENT_CONTEXT` rule catches on-topic questions whose specific fact is missing. |
 | **Numbered excerpts + validator** | The model cites `[n]`; code maps `n` back to report/page/link and deletes any marker that points outside the excerpts, so a printed citation always resolves to a real page that was in the prompt. |
 | **On-disk LLM cache + resumable eval files** | Groq's free tier allows 8k tokens/minute and 200k tokens/day per model. Every answer and judge score is appended as it finishes, so a run killed by a rate limit or a sandbox restart resumes where it stopped. |
+| **Provider fallback chain** | `gpt-oss-20b` on Groq, then the same weights on NVIDIA Build, then `gpt-oss-120b`, `qwen3.8-27b` and `gpt-oss-safeguard-20b` on Groq (each has its own daily quota). A daily-quota 429 moves straight to the next provider; a per-minute 429 waits the time Groq asks for; a 413 "request larger than the 2,000 TPM cap" (safeguard) retries with `max_tokens` shrunk to fit. The model that answered is recorded per question. |
 | **Different model drafted the questions** | Golden questions were drafted by `qwen3.8-27b`, answers come from `gpt-oss-20b`, to avoid a model grading its own phrasing. |
 
 ## Evaluation set

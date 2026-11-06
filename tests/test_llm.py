@@ -94,3 +94,52 @@ def test_daily_quota_skips_retries_and_uses_model_override():
     r = client(h, providers=provs).chat([{"role": "user", "content": "x"}])
     assert r.text == "big model" and r.provider == "p1-big"
     assert seen == ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]  # no retry loop on a daily quota
+
+
+def test_rpm_429_waits_for_the_time_groq_asks_for(monkeypatch):
+    waits, calls = [], {"n": 0}
+    monkeypatch.setattr("marsrag.llm.time.sleep", waits.append)
+
+    def h(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, text="requests per minute (RPM): Limit 3. Please try again in 20s.")
+        return httpx.Response(200, json=ok_body())
+
+    assert client(h).chat([{"role": "user", "content": "x"}]).text == "hello"
+    assert waits == [21.0]
+
+
+def test_default_chain_ends_with_safeguard_model():
+    from marsrag.config import Settings
+    from marsrag.llm import default_client
+
+    c = default_client(Settings())
+    assert c.providers[-1].model == "openai/gpt-oss-safeguard-20b"
+
+
+def test_tpm_cap_413_shrinks_max_tokens_to_fit():
+    seen = []
+
+    def h(req):
+        body = json.loads(req.content)
+        seen.append(body["max_tokens"])
+        if body["max_tokens"] > 600:
+            return httpx.Response(413, text="Request too large ... tokens per minute (TPM): Limit 2000, "
+                                             "Requested 2339, please reduce your message size")
+        return httpx.Response(200, json=ok_body())
+
+    assert client(h).chat([{"role": "user", "content": "x"}], max_tokens=900).text == "hello"
+    assert seen == [900, 900 - 339 - 16]
+
+
+def test_empty_truncated_completion_falls_through_to_next_provider():
+    def h(req):
+        if req.url.host == "p1":
+            return httpx.Response(200, json={"model": "m", "choices": [
+                {"message": {"content": ""}, "finish_reason": "length"}]})
+        return httpx.Response(200, json=ok_body("from p2"))
+
+    provs = [Provider("p1", "https://p1/v1", "K1"), Provider("p2", "https://p2/v1", "K2")]
+    r = client(h, providers=provs).chat([{"role": "user", "content": "x"}])
+    assert r.text == "from p2" and r.provider == "p2"

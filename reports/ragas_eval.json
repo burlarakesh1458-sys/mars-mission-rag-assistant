@@ -1,0 +1,26 @@
+{
+  "rerank_fused": {
+    "judge_model": "openai/gpt-oss-120b",
+    "n_samples": 18,
+    "nonllm_context_precision": {
+      "mean": 0.7861111110591049,
+      "n": 18
+    },
+    "nonllm_context_recall": {
+      "mean": 0.6898148148148148,
+      "n": 18
+    },
+    "faithfulness": {
+      "mean": null,
+      "n": 0
+    },
+    "llm_context_precision": {
+      "mean": null,
+      "n": 0
+    },
+    "llm_context_recall": {
+      "mean": null,
+      "n": 0
+    }
+  }
+}

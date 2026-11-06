@@ -7,6 +7,7 @@ from marsrag.pipeline import (
     RAGPipeline,
     build_context,
     is_refusal,
+    normalize_citations,
     parse_citations,
     strip_invalid,
 )
@@ -26,6 +27,13 @@ def test_parse_citations_valid_invalid_and_dedup(chunks):
     assert [c.n for c in cits] == [1, 3]
     assert cits[1].doc_id == "200" and cits[1].page == 3
     assert invalid == [9]
+
+
+def test_gpt_oss_native_citation_markers_are_normalized(chunks):
+    text = normalize_citations("Fact one【2】. Fact two【1†L2-L4】.")
+    assert text == "Fact one[2]. Fact two[1]."
+    cits, invalid = parse_citations(text, [Hit(c, 1.0) for c in chunks[:3]])
+    assert [c.n for c in cits] == [2, 1] and invalid == []
 
 
 def test_citation_label_has_title_page_and_link(chunks):

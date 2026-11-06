@@ -1,0 +1,21 @@
+{
+  "retrieval_eval.json": {
+    "configs.bm25.metrics.page_hit@5": {"min": 0.92},
+    "configs.hybrid_rrf.metrics.page_hit@5": {"min": 0.87},
+    "configs.hybrid_rrf+rerank_fused.metrics.page_hit@5": {"min": 0.9},
+    "configs.hybrid_rrf+rerank_fused.metrics.doc_hit@5": {"min": 0.97},
+    "configs.hybrid_rrf+rerank_fused.metrics.page_mrr@10": {"min": 0.77}
+  },
+  "e2e_eval.json": {
+    "rerank_fused.n": {"min": 26},
+    "rerank_fused.refusal_accuracy": {"min": 0.92},
+    "rerank_fused.unanswerable_declined_rate": {"min": 0.95},
+    "rerank_fused.answerable_false_refusal_rate": {"max": 0.1},
+    "rerank_fused.citation_accuracy_page": {"min": 0.95},
+    "rerank_fused.citation_present_rate": {"min": 0.95}
+  },
+  "ragas_eval.json": {
+    "rerank_fused.nonllm_context_precision.mean": {"min": 0.75},
+    "rerank_fused.nonllm_context_recall.mean": {"min": 0.65}
+  }
+}

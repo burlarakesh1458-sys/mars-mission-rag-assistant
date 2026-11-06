@@ -1,3 +1,4 @@
 # Evaluation extras (Ragas + LangChain judge client)
 ragas==0.4.3
 langchain-openai==1.7.4
+rapidfuzz==3.14.6  # Ragas non-LLM string-distance metrics
