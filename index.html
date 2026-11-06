@@ -1,0 +1,407 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mars Mission Research Assistant · RAG on NASA Reports · Rakesh Burla</title>
+<meta name="description" content="Mars Mission Research Assistant · RAG on NASA Reports — AI engineering portfolio project by Rakesh Burla">
+<style>
+:root{--bg:#0b0f17;--card:#121826;--fg:#e6e9ef;--mut:#9aa4b2;--acc:#5eead4;--line:#243044}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 -apple-system,Segoe UI,Inter,Roboto,sans-serif}
+header{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0f1625,#0b0f17)}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+.top{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:22px 0;flex-wrap:wrap}
+.brand{font-weight:700;font-size:1.15rem}.brand small{display:block;color:var(--mut);font-weight:400;font-size:.85rem}
+.btn{display:inline-block;padding:9px 16px;border:1px solid var(--acc);color:var(--acc);border-radius:8px;text-decoration:none;font-weight:600}
+.btn:hover{background:var(--acc);color:#04201b}
+main{padding:28px 0 60px}h1,h2,h3{line-height:1.25}h1{font-size:2rem}h2{margin-top:2.2em;padding-bottom:.3em;border-bottom:1px solid var(--line)}
+a{color:var(--acc)}code{background:#1b2333;padding:.1em .35em;border-radius:5px;font-size:.92em}
+pre{background:var(--card);border:1px solid var(--line);padding:14px;border-radius:10px;overflow:auto}pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;display:block;overflow-x:auto;margin:1em 0}th,td{border:1px solid var(--line);padding:7px 10px;text-align:left}th{background:var(--card)}
+img{max-width:100%;border-radius:10px;background:#fff}blockquote{border-left:3px solid var(--acc);margin:0;padding:.2em 1em;color:var(--mut)}
+pre.mermaid{background:#fff;color:#000}
+footer{border-top:1px solid var(--line);color:var(--mut);padding:20px 0;font-size:.9rem}
+</style></head><body>
+<header><div class="wrap top"><div class="brand">Mars Mission Research Assistant · RAG on NASA Reports<small>AI engineering portfolio · Rakesh Burla</small></div>
+<div><a class="btn" href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant">View code on GitHub</a></div></div></header>
+<main class="wrap"><h1 id="mars-mission-research-assistant">Mars Mission Research
+Assistant</h1>
+<p>A retrieval-augmented question-answering system over <strong>60 real
+NASA Technical Reports Server (NTRS) documents</strong> on human
+missions to Mars: radiation, life support, spacecraft and habitat
+design, mission architecture, entry/descent/landing (EDL), crew health
+and in-situ resource use. Ask "Why do Mars landers need supersonic
+retropropulsion?" and it answers in a few sentences, cites
+<strong>report title, page number and NTRS link</strong> for every
+claim, and <strong>declines</strong> when the reports don't contain the
+answer (for example "When did someone last go to the Moon?").</p>
+<p>Hybrid BM25 + dense retrieval fused with Reciprocal Rank Fusion, a
+cross-encoder reranker that also drives a calibrated refusal gate, an
+LLM constrained to cite numbered excerpts, a FastAPI service with a web
+UI and CLI, Docker, CI with an offline eval gate, and an evaluation on a
+50-question golden set (Ragas + own citation / refusal / latency
+metrics).</p>
+<p>Author: Rakesh Burla (B.Tech Mechanical Engineering, RGUKT Basar) ·
+<code>burlarakesh1458-sys</code></p>
+<!-- RESULTS_START -->
+
+<h2 id="results">Results</h2>
+<p>All numbers below are measured by the scripts in this repo; full
+tables in <a
+href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/blob/main/reports/RESULTS.md"><code>reports/RESULTS.md</code></a>.</p>
+<p><strong>Retrieval</strong> (40 answerable questions, 2391 chunks)</p>
+<table>
+<thead>
+<tr class="header">
+<th>Retriever</th>
+<th>page hit@5</th>
+<th>page MRR@10</th>
+<th>doc hit@5</th>
+<th>latency p50</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>bm25</td>
+<td>0.950</td>
+<td>0.849</td>
+<td>1.000</td>
+<td>10 ms</td>
+</tr>
+<tr class="even">
+<td>dense</td>
+<td>0.875</td>
+<td>0.701</td>
+<td>0.950</td>
+<td>71 ms</td>
+</tr>
+<tr class="odd">
+<td>hybrid_rrf</td>
+<td>0.900</td>
+<td>0.819</td>
+<td>0.975</td>
+<td>87 ms</td>
+</tr>
+<tr class="even">
+<td>hybrid_rrf+rerank</td>
+<td>0.800</td>
+<td>0.706</td>
+<td>0.975</td>
+<td>4,061 ms</td>
+</tr>
+<tr class="odd">
+<td>dense+rerank</td>
+<td>0.750</td>
+<td>0.704</td>
+<td>0.950</td>
+<td>4,254 ms</td>
+</tr>
+<tr class="even">
+<td>hybrid_rrf+rerank_fused</td>
+<td>0.925</td>
+<td>0.801</td>
+<td>1.000</td>
+<td>4,385 ms</td>
+</tr>
+</tbody>
+</table>
+<p><strong>End-to-end</strong> (<code>rerank_fused</code>, 26 golden
+questions: 18 answerable, 8 unanswerable)</p>
+<table>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Refusal accuracy (all 26)</td>
+<td>96.2%</td>
+</tr>
+<tr class="even">
+<td>Unanswerable correctly declined</td>
+<td>100.0%</td>
+</tr>
+<tr class="odd">
+<td>Answerable wrongly declined</td>
+<td>5.6%</td>
+</tr>
+<tr class="even">
+<td>Citation accuracy, page level (17 answered)</td>
+<td>100.0%</td>
+</tr>
+<tr class="odd">
+<td>Citation accuracy, report level</td>
+<td>100.0%</td>
+</tr>
+<tr class="even">
+<td>Latency p50 / p95, end-to-end as measured</td>
+<td>5,493 ms / 7,900 ms</td>
+</tr>
+<tr class="odd">
+<td>Latency p50 / p95, excl. rate-limit waits</td>
+<td>5,350 ms / 6,620 ms</td>
+</tr>
+<tr class="even">
+<td>Latency p50, retrieval + rerank (CPU, 1 thread)</td>
+<td>5,031 ms</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Partial run: 26 of 50 golden questions.</strong> Every free
+Groq model in the fallback chain hit its 200k tokens/day cap (shared
+with other projects on the same key) before the remaining 24 could be
+answered; the runner is resumable (<code>make eval-e2e</code> continues
+where it stopped). No numbers are extrapolated.</p>
+</blockquote>
+<p>Latency was measured on a shared 2-vCPU sandbox with 1 torch thread
+while other jobs ran; the cross-encoder rerank of 20 candidates is most
+of the retrieval time.</p>
+<p>Answered by: <code>retrieval_gate (no LLM call)</code> 8,
+<code>openai/gpt-oss-120b</code> 6, <code>openai/gpt-oss-20b</code> 5,
+<code>qwen/qwen3.8-27b</code> 5,
+<code>openai/gpt-oss-safeguard-20b</code> 2</p>
+<p><strong>Ragas</strong> (non-LLM metrics only; LLM-judged faithfulness
+not run, no judge quota left): nonllm_context_precision 0.786 (n=18);
+nonllm_context_recall 0.690 (n=18)</p>
+<h3 id="worked-examples-25-of-26-correct">Worked examples (25 of 26
+correct)</h3>
+<p><strong>q01. Which turbulence model with the Catris-Aupoix
+compressibility correction is used in the NASA FUN3D solver for the Mars
+supersonic retropropulsion investigation?</strong></p>
+<ul>
+<li>Expected: Spalart-Allmaras (gold: NTRS 20210024976 p. [5])</li>
+<li>Got: The NASA FUN3D solver uses the Spalart‑Allmaras turbulence
+model with the Catris‑Aupoix compressibility correction. [1]
+<ul>
+<li>[1] Computational Investigation of the Effect of Chemistry on Mars
+Supersonic Retropropulsion Environments, p. 5 — <a
+href="https://ntrs.nasa.gov/citations/20210024976">https://ntrs.nasa.gov/citations/20210024976</a></li>
+</ul></li>
+<li>Answered by: <code>openai/gpt-oss-20b</code></li>
+<li>Top rerank score: 6.03</li>
+</ul>
+<p><strong>q02. In the Sabatier reactor system integration testing, what
+was the constant ratio of external H2 distribution to the main port,
+window sweep port, and view sweep port?</strong></p>
+<ul>
+<li>Expected: 56% to the main port, 35% to the window sweep port, and 9%
+to the view sweep port (gold: NTRS 20100036570 p. [9])</li>
+<li>Got: The external hydrogen was distributed to the ports in a fixed
+ratio of 56 % to the main port, 35 % to the window sweep port, and 9 %
+to the view sweep port. [2]
+<ul>
+<li>[2] Sabatier Reactor System Integration with Microwave Plasma
+Methane Pyrolysis Post-Processor for Closed-Loop Hydrogen Recovery, p. 9
+— <a
+href="https://ntrs.nasa.gov/citations/20100036570">https://ntrs.nasa.gov/citations/20100036570</a></li>
+</ul></li>
+<li>Answered by: <code>openai/gpt-oss-20b</code></li>
+<li>Top rerank score: 6.46</li>
+</ul>
+<p><strong>q42. What is the price of a ticket for a SpaceX Starship
+flight to Mars?</strong></p>
+<ul>
+<li>Expected: decline (not in the reports)</li>
+<li>Got: DECLINED (low_relevance(top_rerank=-9.71&lt;-6.10))</li>
+<li>Top rerank score: -9.71</li>
+</ul>
+<h3
+id="failed-examples-all-failures-are-listed-in-reportsresultsmd">Failed
+examples (all failures are listed in reports/RESULTS.md)</h3>
+<p><strong>q16. What is the total trip duration in days for the 50,000
+kg payload Mars cargo mission departing Earth on 2028-03-26 and arriving
+on 2030-01-30?</strong></p>
+<ul>
+<li>Expected: 675.0 days (gold: NTRS 20160010261 p. [32])</li>
+<li>Got: DECLINED (llm_declined)</li>
+<li>Answered by: <code>qwen/qwen3.8-27b</code></li>
+<li>Top rerank score: 6.27</li>
+</ul>
+<!-- RESULTS_END -->
+
+<h2 id="architecture">Architecture</h2>
+<pre class="mermaid">flowchart LR
+    subgraph Offline[&quot;Offline (make data ingest index)&quot;]
+        A[NTRS search API&lt;br/&gt;ntrs.nasa.gov/api/citations/search] --&gt;|60 public PDFs&lt;br/&gt;manifest.jsonl: id, title, url, sha256| B[PyMuPDF text extraction]
+        B --&gt; C[clean: de-hyphenate, strip running headers]
+        C --&gt; D[page-bounded chunks&lt;br/&gt;220 words, 40 overlap&lt;br/&gt;doc_id + page + title + url]
+        D --&gt; E[(BM25 index&lt;br/&gt;rank-bm25)]
+        D --&gt; F[bge-small-en-v1.5&lt;br/&gt;384-d, CPU] --&gt; G[(Chroma&lt;br/&gt;cosine HNSW)]
+    end
+    subgraph Online[&quot;Online (FastAPI / CLI)&quot;]
+        Q[question] --&gt; E &amp; G
+        E --&gt;|top 30| R[RRF fusion k=60]
+        G --&gt;|top 30| R
+        R --&gt;|top 20| X[cross-encoder rerank&lt;br/&gt;ms-marco-MiniLM-L-6-v2]
+        X --&gt; T{top score &gt;= calibrated&lt;br/&gt;threshold?}
+        T -- no --&gt; N[decline: not in the reports]
+        T -- yes --&gt; L[gpt-oss-20b via Groq&lt;br/&gt;5 numbered excerpts&lt;br/&gt;cite every sentence or INSUFFICIENT_CONTEXT]
+        L --&gt; V[citation validator&lt;br/&gt;maps n to title, page, NTRS link&lt;br/&gt;drops out-of-range markers]
+        V --&gt; O[answer + sources]
+    end</pre>
+<h2 id="data-provenance">Data provenance</h2>
+<ul>
+<li>Source: NASA Technical Reports Server public search API
+<code>https://ntrs.nasa.gov/api/citations/search</code> (verified
+working; no key needed).</li>
+<li><code>scripts/fetch_corpus.py</code> runs 19 topic queries
+(radiation, life support, spacecraft design, mission planning, EDL, crew
+health, ISRU), keeps only records that are
+<code>distribution=PUBLIC</code>,
+<code>disseminated=DOCUMENT_AND_METADATA</code> and have a PDF,
+round-robins across topics, and skips files over 12 MB or with fewer
+than 3 / more than 80 pages.</li>
+<li>Result: <strong>60 reports, 1,083 pages, 1993-2026</strong> (34
+conference papers, 14 presentations, plus technical memoranda, preprints
+and manuscripts). Every file's NTRS id, title, citation URL, PDF URL,
+topic, year, page count and SHA-256 is in
+<code>data/manifest.jsonl</code>; the full list is in <a
+href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/blob/main/docs/CORPUS.md"><code>docs/CORPUS.md</code></a>.</li>
+<li>The PDFs themselves are not committed (<code>make data</code>
+re-downloads them). The extracted chunks
+(<code>data/chunks.jsonl</code>, 2,391 chunks) are committed so tests
+and the CI eval gate run without downloading anything.</li>
+</ul>
+<h2 id="design-decisions">Design decisions</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Decision</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Chunks never cross a page</strong></td>
+<td>The citation must name an exact page. A chunk that spans pages 4-5
+can't be cited precisely. Cost: some chunks are short.</td>
+</tr>
+<tr class="even">
+<td><strong>Strip lines repeated on 40%+ of pages</strong></td>
+<td>NTRS PDFs carry running headers ("NASA/TM-...", distribution
+notices) that would otherwise dominate BM25 and embeddings.</td>
+</tr>
+<tr class="odd">
+<td><strong>BM25 + dense, fused with RRF (k=60)</strong></td>
+<td>Technical questions contain exact tokens (CO2, BNTEP, DRA 5.0, 92
+kWe) that BM25 matches and embeddings blur; paraphrased questions need
+the dense side. RRF needs no score calibration between the two.</td>
+</tr>
+<tr class="even">
+<td><strong>bge-small-en-v1.5 + MiniLM cross-encoder</strong></td>
+<td>Both run on 2 CPU cores with 1 thread; the whole stack fits in &lt;
+1 GB RAM.</td>
+</tr>
+<tr class="odd">
+<td><strong>Reranker score doubles as the refusal signal</strong></td>
+<td>A cross-encoder score is a calibrated-enough relevance estimate; if
+even the best excerpt scores below the threshold, the question is
+declined <em>before</em> spending an LLM call. The threshold is fit on a
+separate 16-question calibration set
+(<code>eval/calibration.jsonl</code>), never on the golden set.</td>
+</tr>
+<tr class="even">
+<td><strong>Two refusal layers</strong></td>
+<td>The gate catches off-topic questions cheaply; the prompt's
+<code>INSUFFICIENT_CONTEXT</code> rule catches on-topic questions whose
+specific fact is missing.</td>
+</tr>
+<tr class="odd">
+<td><strong>Numbered excerpts + validator</strong></td>
+<td>The model cites <code>[n]</code>; code maps <code>n</code> back to
+report/page/link and deletes any marker that points outside the
+excerpts, so a printed citation always resolves to a real page that was
+in the prompt.</td>
+</tr>
+<tr class="even">
+<td><strong>On-disk LLM cache + resumable eval files</strong></td>
+<td>Groq's free tier allows 8k tokens/minute and 200k tokens/day per
+model. Every answer and judge score is appended as it finishes, so a run
+killed by a rate limit or a sandbox restart resumes where it
+stopped.</td>
+</tr>
+<tr class="odd">
+<td><strong>Provider fallback chain</strong></td>
+<td><code>gpt-oss-20b</code> on Groq, then the same weights on NVIDIA
+Build, then <code>gpt-oss-120b</code>, <code>qwen3.8-27b</code> and
+<code>gpt-oss-safeguard-20b</code> on Groq (each has its own daily
+quota). A daily-quota 429 moves straight to the next provider; a
+per-minute 429 waits the time Groq asks for; a 413 "request larger than
+the 2,000 TPM cap" (safeguard) retries with <code>max_tokens</code>
+shrunk to fit. The model that answered is recorded per question.</td>
+</tr>
+<tr class="even">
+<td><strong>Different model drafted the questions</strong></td>
+<td>Golden questions were drafted by <code>qwen3.8-27b</code>, answers
+come from <code>gpt-oss-20b</code>, to avoid a model grading its own
+phrasing.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="evaluation-set">Evaluation set</h2>
+<ul>
+<li><code>eval/golden.jsonl</code>: <strong>50 questions, 40 answerable
++ 10 unanswerable.</strong>
+<ul>
+<li>32 answerable questions were drafted by an LLM from one randomly
+sampled chunk each (<code>scripts/draft_golden.py</code>, 45 drafts; 9
+were self-flagged as unusable reference lists / bios) and then reviewed
+by hand: <code>scripts/finalize_golden.py</code> records which were
+kept, which reference answer was edited, and which 4 were moved to the
+calibration set. 8 more were written by hand from specific pages.</li>
+<li>Known bias: LLM-drafted questions reuse the wording of their source
+chunk, which flatters lexical retrieval (BM25). The 8 hand-written
+questions are paraphrased more freely.</li>
+<li>Gold location = every (report, page) whose text contains the
+evidence quote. Six questions have two valid locations because NTRS
+holds both a paper and its slide deck (e.g. DRA 5.0, the BNTEP 1-year
+mission); citing either counts.</li>
+<li>10 unanswerable questions: the video's "When did someone last go to
+the Moon?", plus false-premise, near-domain (Perseverance landing date,
+Starship ticket price) and off-topic questions. Each was checked against
+the corpus text.</li>
+</ul></li>
+<li><code>eval/calibration.jsonl</code>: 8 answerable + 8 unanswerable
+questions, disjoint from the golden set, used only to set the refusal
+threshold.</li>
+</ul>
+<h2 id="how-to-run">How to run</h2>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. environment (CPU only)</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> venv .venv <span class="kw">&amp;&amp;</span> <span class="bu">.</span> .venv/bin/activate</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install torch==2.15.0 <span class="at">--index-url</span> https://download.pytorch.org/whl/cpu</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="ex">pip</span> install <span class="at">-r</span> requirements.txt <span class="at">-r</span> requirements-eval.txt <span class="at">-r</span> requirements-dev.txt</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="bu">export</span> <span class="va">PYTHONPATH</span><span class="op">=</span>src <span class="va">OMP_NUM_THREADS</span><span class="op">=</span>1 <span class="va">GROQ_API_KEY</span><span class="op">=</span>...      <span class="co"># optional fallback: NVIDIA_API_KEY</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. data (chunks.jsonl is committed; `make data ingest` rebuilds it from NTRS)</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> index            <span class="co"># embeddings + Chroma (about 25 min on 1 CPU thread; embeddings are cached and resumable)</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> calibrate        <span class="co"># refusal threshold -&gt; eval/refusal_threshold.json</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. use it</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> marsrag.cli ask <span class="st">&quot;What radiation dose would a 700 to 900 day Mars mission give the crew?&quot;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> <span class="at">-m</span> marsrag.cli search <span class="st">&quot;supersonic retropropulsion&quot;</span> <span class="at">--mode</span> bm25</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> serve            <span class="co"># http://localhost:8000  (web UI, POST /ask, GET /search, /reports, /eval, /docs)</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. evaluate</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> eval-retrieval   <span class="co"># BM25 vs dense vs hybrid vs +rerank, no LLM</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> eval-e2e         <span class="co"># answers, citation + refusal accuracy, latency (resumable)</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> eval-ragas       <span class="co"># Ragas metrics</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/make_report.py   <span class="co"># -&gt; reports/RESULTS.md</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> test lint eval-gate</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Docker</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="ex">docker</span> build <span class="at">-t</span> marsrag . <span class="kw">&amp;&amp;</span> <span class="ex">docker</span> run <span class="at">-p</span> 8000:8000 <span class="at">-e</span> GROQ_API_KEY=<span class="va">$GROQ_API_KEY</span> marsrag</span></code></pre></div>
+<h2 id="repository-layout">Repository layout</h2>
+<pre><code>src/marsrag/        config, ingest (PDF-&gt;chunks), retrieval (BM25, Chroma, RRF, reranker),
+                    llm (cached, retrying OpenAI-compatible client), pipeline (gate, prompt, citations),
+                    api (FastAPI), cli, static/index.html (web UI), eval/ (metrics, runners, Ragas)
+scripts/            fetch_corpus, draft_golden, finalize_golden, calibrate, run_pipeline,
+                    make_report, check_eval_gate, corpus_table
+data/               manifest.jsonl (provenance), chunks.jsonl, embeddings.npz
+eval/               golden.jsonl, calibration.jsonl, refusal_threshold.json, gate.json
+reports/            retrieval_eval.json, e2e_eval.json, ragas_eval.json, answers_*.jsonl, RESULTS.md
+tests/              pytest suite (no network, no models)</code></pre>
+</main>
+<footer><div class="wrap">© 2026 Rakesh Burla · MIT License · <a href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant">https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant</a></div></footer>
+<script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true,theme:"default"});</script>
+</body></html>
