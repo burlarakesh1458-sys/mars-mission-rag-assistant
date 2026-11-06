@@ -78,3 +78,19 @@ def test_missing_keys_raise(monkeypatch):
     monkeypatch.delenv("K1")
     with pytest.raises(LLMError, match="no key"):
         client(lambda r: httpx.Response(200, json=ok_body())).chat([{"role": "user", "content": "x"}])
+
+
+def test_daily_quota_skips_retries_and_uses_model_override():
+    seen = []
+
+    def h(req):
+        body = json.loads(req.content)
+        seen.append(body["model"])
+        if body["model"] == "openai/gpt-oss-20b":
+            return httpx.Response(429, text="Rate limit reached on tokens per day (TPD)")
+        return httpx.Response(200, json=ok_body("big model"))
+
+    provs = [Provider("p1", "https://p1/v1", "K1"), Provider("p1-big", "https://p1/v1", "K1", model="openai/gpt-oss-120b")]
+    r = client(h, providers=provs).chat([{"role": "user", "content": "x"}])
+    assert r.text == "big model" and r.provider == "p1-big"
+    assert seen == ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]  # no retry loop on a daily quota

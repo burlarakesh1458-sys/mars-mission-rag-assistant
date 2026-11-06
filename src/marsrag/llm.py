@@ -62,6 +62,7 @@ class Provider:
     name: str
     base_url: str
     key_env: str
+    model: str | None = None  # override the client's model for this provider (fallback chain)
 
     @property
     def api_key(self) -> str | None:
@@ -112,9 +113,10 @@ class ChatClient:
         raise LLMError("; ".join(errors))
 
     def _call(self, prov: Provider, messages: list[dict], max_tokens: int) -> LLMResponse:
-        body = {"model": self.model, "messages": messages, "temperature": self.temperature,
+        model = prov.model or self.model
+        body = {"model": model, "messages": messages, "temperature": self.temperature,
                 "max_tokens": max_tokens}
-        if "gpt-oss" in self.model:
+        if "gpt-oss" in model:
             body["reasoning_effort"] = "low"
         headers = {"Authorization": f"Bearer {prov.api_key}", "Content-Type": "application/json"}
         delay = 2.0
@@ -132,10 +134,13 @@ class ChatClient:
                 data = r.json()
                 msg = data["choices"][0]["message"]
                 usage = data.get("usage") or {}
-                return LLMResponse(text=(msg.get("content") or "").strip(), model=data.get("model", self.model),
+                return LLMResponse(text=(msg.get("content") or "").strip(), model=data.get("model", model),
                                    provider=prov.name, prompt_tokens=usage.get("prompt_tokens", 0),
                                    completion_tokens=usage.get("completion_tokens", 0),
                                    latency_s=time.perf_counter() - t0, raw=data)
+            if r.status_code == 429 and "per day" in r.text:
+                # daily quota: waiting won't help within this run, move on to the next provider
+                raise LLMError(f"daily quota exhausted: {r.text[:200]}")
             if r.status_code in (429, 500, 502, 503, 504) and attempt < self.max_retries:
                 ra = r.headers.get("retry-after")
                 wait = float(ra) if ra and ra.replace(".", "").isdigit() else delay
@@ -150,6 +155,8 @@ class ChatClient:
 
 def default_client(settings) -> ChatClient:
     providers = [Provider("groq", settings.llm_base_url, settings.llm_key_env),
-                 Provider("nvidia", settings.llm_fallback_base_url, settings.llm_fallback_key_env)]
+                 # same weights on a second provider, then the larger sibling on Groq (separate daily quota)
+                 Provider("nvidia", settings.llm_fallback_base_url, settings.llm_fallback_key_env),
+                 Provider("groq-120b", settings.llm_base_url, settings.llm_key_env, model="openai/gpt-oss-120b")]
     return ChatClient(settings.llm_model, providers, cache_path=settings.cache_dir / "llm_cache.sqlite",
                       max_tokens=settings.llm_max_tokens)
