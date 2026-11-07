@@ -23,28 +23,26 @@ All numbers below are measured by the scripts in this repo; full tables in [`rep
 | dense+rerank | 0.750 | 0.704 | 0.950 | 4,254 ms |
 | hybrid_rrf+rerank_fused | 0.925 | 0.801 | 1.000 | 4,385 ms |
 
-**End-to-end** (`rerank_fused`, 26 golden questions: 18 answerable, 8 unanswerable)
+**End-to-end** (`rerank_fused`, 50 golden questions: 40 answerable, 10 unanswerable)
 
 | Metric | Value |
 |---|---|
-| Refusal accuracy (all 26) | 96.2% |
+| Refusal accuracy (all 50) | 98.0% |
 | Unanswerable correctly declined | 100.0% |
-| Answerable wrongly declined | 5.6% |
-| Citation accuracy, page level (17 answered) | 100.0% |
+| Answerable wrongly declined | 2.5% |
+| Citation accuracy, page level (39 answered) | 94.9% |
 | Citation accuracy, report level | 100.0% |
-| Latency p50 / p95, end-to-end as measured | 5,493 ms / 7,900 ms |
-| Latency p50 / p95, excl. rate-limit waits | 5,350 ms / 6,620 ms |
-| Latency p50, retrieval + rerank (CPU, 1 thread) | 5,031 ms |
-
-> **Partial run: 26 of 50 golden questions.** Every free Groq model in the fallback chain hit its 200k tokens/day cap (shared with other projects on the same key) before the remaining 24 could be answered; the runner is resumable (`make eval-e2e` continues where it stopped). No numbers are extrapolated.
+| Latency p50 / p95, end-to-end as measured | 6,584 ms / 15,579 ms |
+| Latency p50 / p95, excl. rate-limit waits | 5,243 ms / 6,938 ms |
+| Latency p50, retrieval + rerank (CPU, 1 thread) | 4,931 ms |
 
 Latency was measured on a shared 2-vCPU sandbox with 1 torch thread while other jobs ran; the cross-encoder rerank of 20 candidates is most of the retrieval time.
 
-Answered by: `retrieval_gate (no LLM call)` 8, `openai/gpt-oss-120b` 6, `openai/gpt-oss-20b` 5, `qwen/qwen3.8-27b` 5, `openai/gpt-oss-safeguard-20b` 2
+Answered by: `openai/gpt-oss-20b` 29, `retrieval_gate (no LLM call)` 8, `openai/gpt-oss-120b` 6, `qwen/qwen3.8-27b` 5, `openai/gpt-oss-safeguard-20b` 2
 
-**Ragas** (non-LLM metrics only; LLM-judged faithfulness not run, no judge quota left): nonllm_context_precision 0.786 (n=18); nonllm_context_recall 0.690 (n=18)
+**Ragas** (faithfulness judged by `openai/gpt-oss-120b`): nonllm_context_precision 0.767 (n=40); nonllm_context_recall 0.662 (n=40); faithfulness 1.000 (n=15)
 
-### Worked examples (25 of 26 correct)
+### Worked examples (47 of 50 correct)
 
 **q01. Which turbulence model with the Catris-Aupoix compressibility correction is used in the NASA FUN3D solver for the Mars supersonic retropropulsion investigation?**
 
@@ -76,6 +74,23 @@ Answered by: `retrieval_gate (no LLM call)` 8, `openai/gpt-oss-120b` 6, `openai/
 - Got: DECLINED (llm_declined)
 - Answered by: `qwen/qwen3.8-27b`
 - Top rerank score: 6.27
+
+**q20. According to the performance comparison for the Mars Ascent Vehicle, what is the engine mass in kilograms for the MMH/NTO propellant combination?**
+
+- Expected: 39.9 kg (gold: NTRS 20140011316 p. [38])
+- Got: The engine mass for the MMH/NTO propellant combination is 50.11 kg. [3]
+  - [3] Mars Sample Return: Mars Ascent Vehicle Mission and Technology Requirements, p. 39 — https://ntrs.nasa.gov/citations/20140011316
+- Answered by: `openai/gpt-oss-20b`
+- Top rerank score: 2.38
+
+**q33. In the DRA 5.0 power requirements study, what total power level is needed for the ISRU phase and what drives it?**
+
+- Expected: About 92 kWe, driven mainly by producing oxygen for the ascent stage (8 hours per sol for 300 sols). (gold: NTRS 20120012929 p. [4])
+- Got: The ISRU phase requires a total daytime average power of about **96 kWe** [3]. This level is driven primarily by the need to produce **ascent‑propellant O₂** on the surface [1][3].
+  - [3] Power Requirements for The NASA Mars Design Reference Architecture (DRA) 5.0, p. 5 — https://ntrs.nasa.gov/citations/20120012929
+  - [1] Power Requirements for The NASA Mars Design Reference Architecture (DRA) 5.0, p. 6 — https://ntrs.nasa.gov/citations/20120012929
+- Answered by: `openai/gpt-oss-20b`
+- Top rerank score: 1.98
 
 <!-- RESULTS_END -->
 

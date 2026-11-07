@@ -102,8 +102,8 @@ href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/blob/mai
 </tr>
 </tbody>
 </table>
-<p><strong>End-to-end</strong> (<code>rerank_fused</code>, 26 golden
-questions: 18 answerable, 8 unanswerable)</p>
+<p><strong>End-to-end</strong> (<code>rerank_fused</code>, 50 golden
+questions: 40 answerable, 10 unanswerable)</p>
 <table>
 <thead>
 <tr class="header">
@@ -113,8 +113,8 @@ questions: 18 answerable, 8 unanswerable)</p>
 </thead>
 <tbody>
 <tr class="odd">
-<td>Refusal accuracy (all 26)</td>
-<td>96.2%</td>
+<td>Refusal accuracy (all 50)</td>
+<td>98.0%</td>
 </tr>
 <tr class="even">
 <td>Unanswerable correctly declined</td>
@@ -122,11 +122,11 @@ questions: 18 answerable, 8 unanswerable)</p>
 </tr>
 <tr class="odd">
 <td>Answerable wrongly declined</td>
-<td>5.6%</td>
+<td>2.5%</td>
 </tr>
 <tr class="even">
-<td>Citation accuracy, page level (17 answered)</td>
-<td>100.0%</td>
+<td>Citation accuracy, page level (39 answered)</td>
+<td>94.9%</td>
 </tr>
 <tr class="odd">
 <td>Citation accuracy, report level</td>
@@ -134,36 +134,30 @@ questions: 18 answerable, 8 unanswerable)</p>
 </tr>
 <tr class="even">
 <td>Latency p50 / p95, end-to-end as measured</td>
-<td>5,493 ms / 7,900 ms</td>
+<td>6,584 ms / 15,579 ms</td>
 </tr>
 <tr class="odd">
 <td>Latency p50 / p95, excl. rate-limit waits</td>
-<td>5,350 ms / 6,620 ms</td>
+<td>5,243 ms / 6,938 ms</td>
 </tr>
 <tr class="even">
 <td>Latency p50, retrieval + rerank (CPU, 1 thread)</td>
-<td>5,031 ms</td>
+<td>4,931 ms</td>
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p><strong>Partial run: 26 of 50 golden questions.</strong> Every free
-Groq model in the fallback chain hit its 200k tokens/day cap (shared
-with other projects on the same key) before the remaining 24 could be
-answered; the runner is resumable (<code>make eval-e2e</code> continues
-where it stopped). No numbers are extrapolated.</p>
-</blockquote>
 <p>Latency was measured on a shared 2-vCPU sandbox with 1 torch thread
 while other jobs ran; the cross-encoder rerank of 20 candidates is most
 of the retrieval time.</p>
-<p>Answered by: <code>retrieval_gate (no LLM call)</code> 8,
-<code>openai/gpt-oss-120b</code> 6, <code>openai/gpt-oss-20b</code> 5,
-<code>qwen/qwen3.8-27b</code> 5,
+<p>Answered by: <code>openai/gpt-oss-20b</code> 29,
+<code>retrieval_gate (no LLM call)</code> 8,
+<code>openai/gpt-oss-120b</code> 6, <code>qwen/qwen3.8-27b</code> 5,
 <code>openai/gpt-oss-safeguard-20b</code> 2</p>
-<p><strong>Ragas</strong> (non-LLM metrics only; LLM-judged faithfulness
-not run, no judge quota left): nonllm_context_precision 0.786 (n=18);
-nonllm_context_recall 0.690 (n=18)</p>
-<h3 id="worked-examples-25-of-26-correct">Worked examples (25 of 26
+<p><strong>Ragas</strong> (faithfulness judged by
+<code>openai/gpt-oss-120b</code>): nonllm_context_precision 0.767
+(n=40); nonllm_context_recall 0.662 (n=40); faithfulness 1.000
+(n=15)</p>
+<h3 id="worked-examples-47-of-50-correct">Worked examples (47 of 50
 correct)</h3>
 <p><strong>q01. Which turbulence model with the Catris-Aupoix
 compressibility correction is used in the NASA FUN3D solver for the Mars
@@ -216,6 +210,42 @@ on 2030-01-30?</strong></p>
 <li>Got: DECLINED (llm_declined)</li>
 <li>Answered by: <code>qwen/qwen3.8-27b</code></li>
 <li>Top rerank score: 6.27</li>
+</ul>
+<p><strong>q20. According to the performance comparison for the Mars
+Ascent Vehicle, what is the engine mass in kilograms for the MMH/NTO
+propellant combination?</strong></p>
+<ul>
+<li>Expected: 39.9 kg (gold: NTRS 20140011316 p. [38])</li>
+<li>Got: The engine mass for the MMH/NTO propellant combination is
+50.11 kg. [3]
+<ul>
+<li>[3] Mars Sample Return: Mars Ascent Vehicle Mission and Technology
+Requirements, p. 39 — <a
+href="https://ntrs.nasa.gov/citations/20140011316">https://ntrs.nasa.gov/citations/20140011316</a></li>
+</ul></li>
+<li>Answered by: <code>openai/gpt-oss-20b</code></li>
+<li>Top rerank score: 2.38</li>
+</ul>
+<p><strong>q33. In the DRA 5.0 power requirements study, what total
+power level is needed for the ISRU phase and what drives
+it?</strong></p>
+<ul>
+<li>Expected: About 92 kWe, driven mainly by producing oxygen for the
+ascent stage (8 hours per sol for 300 sols). (gold: NTRS 20120012929 p.
+[4])</li>
+<li>Got: The ISRU phase requires a total daytime average power of about
+<strong>96 kWe</strong> [3]. This level is driven primarily by the need
+to produce <strong>ascent‑propellant O₂</strong> on the surface [1][3].
+<ul>
+<li>[3] Power Requirements for The NASA Mars Design Reference
+Architecture (DRA) 5.0, p. 5 — <a
+href="https://ntrs.nasa.gov/citations/20120012929">https://ntrs.nasa.gov/citations/20120012929</a></li>
+<li>[1] Power Requirements for The NASA Mars Design Reference
+Architecture (DRA) 5.0, p. 6 — <a
+href="https://ntrs.nasa.gov/citations/20120012929">https://ntrs.nasa.gov/citations/20120012929</a></li>
+</ul></li>
+<li>Answered by: <code>openai/gpt-oss-20b</code></li>
+<li>Top rerank score: 1.98</li>
 </ul>
 <!-- RESULTS_END -->
 

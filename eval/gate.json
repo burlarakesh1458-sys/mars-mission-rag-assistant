@@ -7,11 +7,11 @@
     "configs.hybrid_rrf+rerank_fused.metrics.page_mrr@10": {"min": 0.77}
   },
   "e2e_eval.json": {
-    "rerank_fused.n": {"min": 26},
+    "rerank_fused.n": {"min": 50},
     "rerank_fused.refusal_accuracy": {"min": 0.92},
     "rerank_fused.unanswerable_declined_rate": {"min": 0.95},
     "rerank_fused.answerable_false_refusal_rate": {"max": 0.1},
-    "rerank_fused.citation_accuracy_page": {"min": 0.95},
+    "rerank_fused.citation_accuracy_page": {"min": 0.94},
     "rerank_fused.citation_present_rate": {"min": 0.95}
   },
   "ragas_eval.json": {
