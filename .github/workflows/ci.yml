@@ -2,7 +2,13 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -28,3 +34,11 @@ jobs:
         run: |
           python -m marsrag.eval.run_retrieval --bm25-only --min-doc-hit5 0.9
           python scripts/check_eval_gate.py
+
+  docker:
+    name: docker build
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t marsrag:ci .

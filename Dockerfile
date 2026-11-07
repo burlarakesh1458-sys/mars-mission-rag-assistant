@@ -13,13 +13,14 @@ RUN pip install --no-cache-dir torch==2.15.0 --index-url https://download.pytorc
  && pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
-COPY data/manifest.jsonl data/chunks.jsonl ./data/
+COPY data/manifest.jsonl data/chunks.jsonl data/embeddings.npz ./data/
 COPY eval ./eval
 COPY reports ./reports
 
-# bake models + vector index into the image (about 2-10 min on CPU)
+# bake models + vector index into the image (reuses the committed embeddings.npz, so no re-embedding)
 RUN python -m marsrag.cli index \
- && python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+ && python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+SentenceTransformer('BAAI/bge-small-en-v1.5'); CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
 ENV HF_HUB_OFFLINE=1
 
 RUN useradd -m app && chown -R app /app

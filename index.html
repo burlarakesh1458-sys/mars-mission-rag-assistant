@@ -23,6 +23,18 @@ footer{border-top:1px solid var(--line);color:var(--mut);padding:20px 0;font-siz
 <div><a class="btn" href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant">View code on GitHub</a></div></div></header>
 <main class="wrap"><h1 id="mars-mission-research-assistant">Mars Mission Research
 Assistant</h1>
+<!-- links -->
+
+<p><a
+href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/actions/workflows/ci.yml"><img
+src="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/actions/workflows/ci.yml/badge.svg"
+alt="CI" /></a> <strong>Live demo:</strong> <a
+href="http://rakeshburla.dpdns.org/mars-mission-rag-assistant/">http://rakeshburla.dpdns.org/mars-mission-rag-assistant/</a>
+· <strong>Code:</strong> <a
+href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant">https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant</a>
+· <strong>Resume bullets:</strong> <a
+href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/blob/main/RESUME_BULLETS.md">RESUME_BULLETS.md</a> ·
+<strong>License:</strong> MIT</p>
 <p>A retrieval-augmented question-answering system over <strong>60 real
 NASA Technical Reports Server (NTRS) documents</strong> on human
 missions to Mars: radiation, life support, spacecraft and habitat
@@ -431,6 +443,32 @@ data/               manifest.jsonl (provenance), chunks.jsonl, embeddings.npz
 eval/               golden.jsonl, calibration.jsonl, refusal_threshold.json, gate.json
 reports/            retrieval_eval.json, e2e_eval.json, ragas_eval.json, answers_*.jsonl, RESULTS.md
 tests/              pytest suite (no network, no models)</code></pre>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li><strong>Small golden set.</strong> 50 questions (40 answerable, 10
+unanswerable) over 60 reports; one question moves refusal accuracy by 2
+points and page citation accuracy by about 2.6 points.</li>
+<li><strong>Faithfulness is a sample.</strong> The LLM judge
+(<code>gpt-oss-120b</code>) scored 15 of the 39 answered questions to
+fit the free daily quota; LLM-based Ragas context precision/recall were
+not run (only the non-LLM variants, n=40).</li>
+<li><strong>Mixed generators.</strong> Free-tier quotas forced the
+fallback chain to answer 13 of the 42 LLM-answered questions with a
+model other than <code>gpt-oss-20b</code> (see "Answered by"); the
+numbers describe the chain as deployed, not one model.</li>
+<li><strong>Latency is from a shared 2-vCPU sandbox</strong> with 1
+torch thread; the cross-encoder rerank dominates retrieval time.
+End-to-end p95 including rate-limit waits was 15.6 s.</li>
+<li><strong>LLM-drafted questions</strong> reuse their source chunk's
+wording, which flatters BM25 (see Evaluation set).</li>
+<li><strong>No hosted backend.</strong> The live page shows this
+write-up and the measured results; asking new questions needs the API
+running locally or in Docker with a <code>GROQ_API_KEY</code>.</li>
+</ul>
+<h2 id="license">License</h2>
+<p>MIT, see <a href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/blob/main/LICENSE">LICENSE</a>. NTRS documents are public
+NASA reports; provenance per document is in
+<code>data/manifest.jsonl</code>.</p>
 </main>
 <footer><div class="wrap">© 2026 Rakesh Burla · MIT License · <a href="https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant">https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant</a></div></footer>
 <script type="module">import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";mermaid.initialize({startOnLoad:true,theme:"default"});</script>

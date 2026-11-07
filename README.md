@@ -1,5 +1,8 @@
 # Mars Mission Research Assistant
 
+<!-- links -->
+[![CI](https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant/actions/workflows/ci.yml) **Live demo:** <http://rakeshburla.dpdns.org/mars-mission-rag-assistant/> · **Code:** <https://github.com/burlarakesh1458-sys/mars-mission-rag-assistant> · **Resume bullets:** [RESUME_BULLETS.md](RESUME_BULLETS.md) · **License:** MIT
+
 A retrieval-augmented question-answering system over **60 real NASA Technical Reports Server (NTRS) documents** on human missions to Mars: radiation, life support, spacecraft and habitat design, mission architecture, entry/descent/landing (EDL), crew health and in-situ resource use.
 Ask "Why do Mars landers need supersonic retropropulsion?" and it answers in a few sentences, cites **report title, page number and NTRS link** for every claim, and **declines** when the reports don't contain the answer (for example "When did someone last go to the Moon?").
 
@@ -191,3 +194,16 @@ eval/               golden.jsonl, calibration.jsonl, refusal_threshold.json, gat
 reports/            retrieval_eval.json, e2e_eval.json, ragas_eval.json, answers_*.jsonl, RESULTS.md
 tests/              pytest suite (no network, no models)
 ```
+
+## Limitations
+
+* **Small golden set.** 50 questions (40 answerable, 10 unanswerable) over 60 reports; one question moves refusal accuracy by 2 points and page citation accuracy by about 2.6 points.
+* **Faithfulness is a sample.** The LLM judge (`gpt-oss-120b`) scored 15 of the 39 answered questions to fit the free daily quota; LLM-based Ragas context precision/recall were not run (only the non-LLM variants, n=40).
+* **Mixed generators.** Free-tier quotas forced the fallback chain to answer 13 of the 42 LLM-answered questions with a model other than `gpt-oss-20b` (see "Answered by"); the numbers describe the chain as deployed, not one model.
+* **Latency is from a shared 2-vCPU sandbox** with 1 torch thread; the cross-encoder rerank dominates retrieval time. End-to-end p95 including rate-limit waits was 15.6 s.
+* **LLM-drafted questions** reuse their source chunk's wording, which flatters BM25 (see Evaluation set).
+* **No hosted backend.** The live page shows this write-up and the measured results; asking new questions needs the API running locally or in Docker with a `GROQ_API_KEY`.
+
+## License
+
+MIT, see [LICENSE](LICENSE). NTRS documents are public NASA reports; provenance per document is in `data/manifest.jsonl`.
